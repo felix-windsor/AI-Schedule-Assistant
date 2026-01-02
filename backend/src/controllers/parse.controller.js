@@ -3,11 +3,12 @@
  * 处理日程解析请求
  */
 
-const { openai, getModel } = require('../config/openai');
+const { getOpenAIClient, getModel, getAPIKey } = require('../config/openai');
 const eventSchema = require('../schemas/event-schema');
 const buildSystemPrompt = require('../prompts/system-prompt');
 const { createErrorResponse } = require('../utils/error-codes');
 const { logger } = require('../middlewares/logger');
+const axios = require('axios');
 
 /**
  * 解析日程
@@ -29,10 +30,14 @@ async function parseSchedule(req, res, next) {
 
     // 调用 OpenAI API
     const model = getModel();
+    const apiKey = getAPIKey();
     
     // 尝试使用 Structured Outputs，如果失败则降级到普通 JSON 模式
     let response;
     let useStructuredOutputs = true;
+    
+    // 首先尝试使用 OpenAI SDK
+    const openai = getOpenAIClient();
     
     try {
       response = await openai.chat.completions.create({
@@ -58,17 +63,110 @@ async function parseSchedule(req, res, next) {
         temperature: 0.3,
         max_tokens: 4000,
       });
-    } catch (structuredError) {
-      // 如果 Structured Outputs 不可用，降级到普通 JSON 模式
-      if (structuredError.message && structuredError.message.includes('response_format')) {
+    } catch (sdkError) {
+      // 如果 SDK 失败（特别是 401 错误），尝试使用 axios 直接调用
+      if (sdkError.status === 401) {
+        logger.warn('OpenAI SDK 返回 401，尝试使用 axios 直接调用 API', {
+          error: sdkError.message,
+        });
+        
+        try {
+          // 使用 axios 直接调用 OpenAI API
+          const axiosResponse = await axios.post(
+            'https://api.openai.com/v1/chat/completions',
+            {
+              model: model,
+              messages: [
+                {
+                  role: 'system',
+                  content: systemPrompt,
+                },
+                {
+                  role: 'user',
+                  content: text,
+                },
+              ],
+              response_format: {
+                type: 'json_schema',
+                json_schema: {
+                  name: 'calendar_events',
+                  schema: eventSchema,
+                  strict: true,
+                },
+              },
+              temperature: 0.3,
+              max_tokens: 4000,
+            },
+            {
+              headers: {
+                'Authorization': `Bearer ${apiKey}`,
+                'Content-Type': 'application/json',
+              },
+            }
+          );
+          
+          // 将 axios 响应转换为 SDK 格式
+          response = { choices: axiosResponse.data.choices };
+          logger.info('使用 axios 成功调用 OpenAI API');
+        } catch (axiosError) {
+          // axios 也失败，检查是否是 Structured Outputs 不支持
+          if (axiosError.response && axiosError.response.status === 400 && 
+              axiosError.response.data && axiosError.response.data.error && 
+              axiosError.response.data.error.message && 
+              axiosError.response.data.error.message.includes('response_format')) {
+            
+            logger.warn('Structured Outputs not available, falling back to JSON mode', {
+              model: model,
+            });
+            
+            useStructuredOutputs = false;
+            
+            // 使用普通 JSON 模式
+            const jsonSystemPrompt = systemPrompt + '\n\n重要：你必须严格按照以下 JSON Schema 格式返回数据，不要添加任何额外的文本或说明：\n' + JSON.stringify(eventSchema, null, 2);
+            
+            const jsonResponse = await axios.post(
+              'https://api.openai.com/v1/chat/completions',
+              {
+                model: model,
+                messages: [
+                  {
+                    role: 'system',
+                    content: jsonSystemPrompt,
+                  },
+                  {
+                    role: 'user',
+                    content: text,
+                  },
+                ],
+                response_format: {
+                  type: 'json_object',
+                },
+                temperature: 0.3,
+                max_tokens: 4000,
+              },
+              {
+                headers: {
+                  'Authorization': `Bearer ${apiKey}`,
+                  'Content-Type': 'application/json',
+                },
+              }
+            );
+            
+            response = { choices: jsonResponse.data.choices };
+          } else {
+            // 其他错误，抛出原始错误
+            throw axiosError;
+          }
+        }
+      } else if (sdkError.message && sdkError.message.includes('response_format')) {
+        // Structured Outputs 不支持，降级到 JSON 模式
         logger.warn('Structured Outputs not available, falling back to JSON mode', {
           model: model,
-          error: structuredError.message,
+          error: sdkError.message,
         });
         
         useStructuredOutputs = false;
         
-        // 使用普通 JSON 模式，并在 system prompt 中强调格式要求
         const jsonSystemPrompt = systemPrompt + '\n\n重要：你必须严格按照以下 JSON Schema 格式返回数据，不要添加任何额外的文本或说明：\n' + JSON.stringify(eventSchema, null, 2);
         
         response = await openai.chat.completions.create({
@@ -91,7 +189,7 @@ async function parseSchedule(req, res, next) {
         });
       } else {
         // 其他错误，直接抛出
-        throw structuredError;
+        throw sdkError;
       }
     }
 

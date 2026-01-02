@@ -4,8 +4,9 @@
 
 const path = require('path');
 // 确保从 backend 目录加载 .env 文件
+// 使用 override: true 让 .env 文件中的值覆盖系统环境变量
 const envPath = path.resolve(__dirname, '../.env');
-require('dotenv').config({ path: envPath });
+require('dotenv').config({ path: envPath, override: true });
 const express = require('express');
 const cors = require('cors'); // 跨域请求中间件
 const { requestLogger } = require('./middlewares/logger'); // 请求日志中间件
