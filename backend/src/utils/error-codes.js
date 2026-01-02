@@ -36,6 +36,11 @@ const ErrorCodes = {
     message: '超过 max_events 限制',
     httpStatus: 400,
   },
+  NOT_FOUND: {
+    code: 'E1007',
+    message: '请求的路径不存在',
+    httpStatus: 404,
+  },
 
   // 服务器错误 (5xx)
   AI_SERVICE_ERROR: {

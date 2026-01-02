@@ -29,29 +29,71 @@ async function parseSchedule(req, res, next) {
 
     // 调用 OpenAI API
     const model = getModel();
-    const response = await openai.chat.completions.create({
-      model: model,
-      messages: [
-        {
-          role: 'system',
-          content: systemPrompt,
+    
+    // 尝试使用 Structured Outputs，如果失败则降级到普通 JSON 模式
+    let response;
+    let useStructuredOutputs = true;
+    
+    try {
+      response = await openai.chat.completions.create({
+        model: model,
+        messages: [
+          {
+            role: 'system',
+            content: systemPrompt,
+          },
+          {
+            role: 'user',
+            content: text,
+          },
+        ],
+        response_format: {
+          type: 'json_schema',
+          json_schema: {
+            name: 'calendar_events',
+            schema: eventSchema,
+            strict: true,
+          },
         },
-        {
-          role: 'user',
-          content: text,
-        },
-      ],
-      response_format: {
-        type: 'json_schema',
-        json_schema: {
-          name: 'calendar_events',
-          schema: eventSchema,
-          strict: true,
-        },
-      },
-      temperature: 0.3, // 降低温度以提高准确性
-      max_tokens: 4000,
-    });
+        temperature: 0.3,
+        max_tokens: 4000,
+      });
+    } catch (structuredError) {
+      // 如果 Structured Outputs 不可用，降级到普通 JSON 模式
+      if (structuredError.message && structuredError.message.includes('response_format')) {
+        logger.warn('Structured Outputs not available, falling back to JSON mode', {
+          model: model,
+          error: structuredError.message,
+        });
+        
+        useStructuredOutputs = false;
+        
+        // 使用普通 JSON 模式，并在 system prompt 中强调格式要求
+        const jsonSystemPrompt = systemPrompt + '\n\n重要：你必须严格按照以下 JSON Schema 格式返回数据，不要添加任何额外的文本或说明：\n' + JSON.stringify(eventSchema, null, 2);
+        
+        response = await openai.chat.completions.create({
+          model: model,
+          messages: [
+            {
+              role: 'system',
+              content: jsonSystemPrompt,
+            },
+            {
+              role: 'user',
+              content: text,
+            },
+          ],
+          response_format: {
+            type: 'json_object',
+          },
+          temperature: 0.3,
+          max_tokens: 4000,
+        });
+      } else {
+        // 其他错误，直接抛出
+        throw structuredError;
+      }
+    }
 
     // 解析响应
     const content = response.choices[0].message.content;
@@ -139,6 +181,7 @@ async function parseSchedule(req, res, next) {
           ? result.events.reduce((sum, e) => sum + (e.metadata?.confidence || 0), 0) / result.events.length
           : 0,
         model: model,
+        use_structured_outputs: useStructuredOutputs,
       },
     };
 
@@ -158,6 +201,8 @@ async function parseSchedule(req, res, next) {
     // 其他错误，记录并返回通用错误
     logger.error('Parse schedule error', {
       error: error.message,
+      status: error.status,
+      code: error.code,
       stack: process.env.NODE_ENV === 'development' ? error.stack : undefined,
     });
 
@@ -168,8 +213,23 @@ async function parseSchedule(req, res, next) {
         return res.status(errorResponse.httpStatus).json(errorResponse);
       }
 
+      if (error.status === 400) {
+        // 400 错误可能是参数错误，包括 response_format 不可用
+        const errorMessage = error.message || 'OpenAI API 请求参数错误';
+        const errorResponse = createErrorResponse('AI_SERVICE_ERROR', 
+          `OpenAI API 错误: ${errorMessage}`, 
+          '请检查模型配置或稍后重试'
+        );
+        return res.status(errorResponse.httpStatus).json(errorResponse);
+      }
+
+      if (error.status === 401) {
+        const errorResponse = createErrorResponse('AI_SERVICE_ERROR', 'OpenAI API 认证失败', '请检查 API Key 配置');
+        return res.status(errorResponse.httpStatus).json(errorResponse);
+      }
+
       if (error.status === 503 || error.status >= 500) {
-        const errorResponse = createErrorResponse('AI_SERVICE_ERROR', `OpenAI API 错误: ${error.message}`, '请稍后重试');
+        const errorResponse = createErrorResponse('AI_SERVICE_ERROR', `OpenAI API 服务错误: ${error.message}`, '请稍后重试');
         return res.status(errorResponse.httpStatus).json(errorResponse);
       }
     }

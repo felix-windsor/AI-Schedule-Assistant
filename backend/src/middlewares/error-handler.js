@@ -71,8 +71,8 @@ function errorHandler(err, req, res, next) {
  * 404 处理
  */
 function notFoundHandler(req, res) {
-  const error = createErrorResponse('INVALID_INPUT', `路径不存在: ${req.method} ${req.path}`, '请检查 API 路径');
-  res.status(404).json(error);
+  const error = createErrorResponse('NOT_FOUND', `路径不存在: ${req.method} ${req.path}`, '请检查 API 路径，可用的路径: GET /health, POST /api/v1/events/parse');
+  res.status(error.httpStatus).json(error);
 }
 
 module.exports = {
