@@ -4,13 +4,13 @@
 
 require('dotenv').config();
 const express = require('express');
-const cors = require('cors');
-const { requestLogger } = require('./middlewares/logger');
-const { validateParseRequest } = require('./middlewares/validation');
-const { errorHandler, notFoundHandler } = require('./middlewares/error-handler');
-const { parseSchedule } = require('./controllers/parse.controller');
+const cors = require('cors'); // 跨域请求中间件
+const { requestLogger } = require('./middlewares/logger'); // 请求日志中间件
+const { validateParseRequest } = require('./middlewares/validation'); // 请求参数验证中间件
+const { errorHandler, notFoundHandler } = require('./middlewares/error-handler'); // 错误处理中间件
+const { parseSchedule } = require('./controllers/parse.controller'); // 解析控制器
 
-const app = express();
+const app = express(); // 创建 express 应用
 
 // 中间件配置
 app.use(cors());

@@ -3,7 +3,7 @@
  * 处理日程解析请求
  */
 
-const openai = require('../config/openai');
+const { openai, getModel } = require('../config/openai');
 const eventSchema = require('../schemas/event-schema');
 const buildSystemPrompt = require('../prompts/system-prompt');
 const { createErrorResponse } = require('../utils/error-codes');
@@ -28,8 +28,9 @@ async function parseSchedule(req, res, next) {
     const systemPrompt = buildSystemPrompt(context, options);
 
     // 调用 OpenAI API
+    const model = getModel();
     const response = await openai.chat.completions.create({
-      model: 'gpt-4o-2024-08-06',
+      model: model,
       messages: [
         {
           role: 'system',
@@ -137,6 +138,7 @@ async function parseSchedule(req, res, next) {
         confidence_score: result.events.length > 0
           ? result.events.reduce((sum, e) => sum + (e.metadata?.confidence || 0), 0) / result.events.length
           : 0,
+        model: model,
       },
     };
 
