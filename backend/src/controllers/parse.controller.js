@@ -64,10 +64,30 @@ async function parseSchedule(req, res, next) {
         max_tokens: 4000,
       });
     } catch (sdkError) {
-      // 如果 SDK 失败（特别是 401 错误），尝试使用 axios 直接调用
-      if (sdkError.status === 401) {
-        logger.warn('OpenAI SDK 返回 401，尝试使用 axios 直接调用 API', {
-          error: sdkError.message,
+      // 如果 SDK 失败，尝试使用 axios 直接调用
+      // 检查是否是认证错误、连接错误或其他可恢复的错误
+      const errorName = sdkError.constructor?.name || '';
+      const errorMessage = sdkError.message || '';
+      const errorCode = sdkError.code || '';
+      
+      const isRecoverableError = 
+        sdkError.status === 401 || // 认证错误
+        errorName === 'APIConnectionError' || // 连接错误
+        errorCode === 'APIConnectionError' ||
+        errorMessage.includes('Connection error') ||
+        errorMessage.includes('connection') ||
+        errorMessage.includes('fetch failed') ||
+        errorMessage.includes('ECONNREFUSED') ||
+        errorMessage.includes('ETIMEDOUT');
+      
+      if (isRecoverableError) {
+        const errorType = sdkError.status === 401 ? '401 认证错误' : 
+                         errorName === 'APIConnectionError' ? '连接错误' : 'SDK 错误';
+        logger.warn(`OpenAI SDK 返回 ${errorType}，尝试使用 axios 直接调用 API`, {
+          error: errorMessage,
+          errorType: errorName,
+          errorCode: errorCode,
+          status: sdkError.status,
         });
         
         try {

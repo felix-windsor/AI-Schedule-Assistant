@@ -69,7 +69,7 @@ async function debugSDKAuth() {
   // 测试 3: 检查 SDK 版本和配置
   console.log('测试 3: 检查 SDK 版本和配置');
   try {
-    const openaiPackage = require('./node_modules/openai/package.json');
+    const openaiPackage = require('../backend/node_modules/openai/package.json');
     console.log(`  SDK 版本: ${openaiPackage.version}`);
   } catch (error) {
     console.log('  无法读取 SDK 版本信息');

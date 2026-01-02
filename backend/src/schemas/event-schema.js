@@ -60,7 +60,7 @@ const eventSchema = {
           
           // 扩展属性（存储在 extendedProps 中）
           extendedProps: {
-            type: "object",
+            type: ["object", "null"],
             properties: {
               description: {
                 type: ["string", "null"],
@@ -71,19 +71,23 @@ const eventSchema = {
                 description: "地点（与顶层 location 相同）"
               },
               category: {
-                type: "string",
+                type: ["string", "null"],
                 enum: ["work", "personal", "health", "other"],
                 description: "事件分类"
               },
               timezone: {
-                type: "string",
+                type: ["string", "null"],
                 description: "IANA 时区标识符，如 Asia/Shanghai"
               },
               priority: {
                 type: ["string", "null"],
                 description: "优先级：high, medium, low"
               }
-            }
+            },
+            // OpenAI Structured Outputs 要求：required 必须包含 properties 中的所有键
+            // 对于可选字段，我们使用 type: ["string", "null"] 来允许 null 值
+            required: ["description", "location", "category", "timezone", "priority"],
+            additionalProperties: false
           },
           
           // 重复事件支持
@@ -96,12 +100,12 @@ const eventSchema = {
                 description: "重复频率"
               },
               interval: {
-                type: "integer",
+                type: ["integer", "null"],
                 minimum: 1,
                 description: "重复间隔，如每2周则 interval=2"
               },
               byDay: {
-                type: "array",
+                type: ["array", "null"],
                 items: {
                   type: "string",
                   enum: ["MO", "TU", "WE", "TH", "FR", "SA", "SU"]
@@ -109,7 +113,7 @@ const eventSchema = {
                 description: "指定星期几重复，如 ['MO', 'WE', 'FR']"
               },
               until: {
-                type: "string",
+                type: ["string", "null"],
                 description: "ISO 8601 格式的结束日期"
               },
               count: {
@@ -118,7 +122,10 @@ const eventSchema = {
                 description: "重复次数"
               }
             },
-            required: ["freq"]
+            // OpenAI Structured Outputs 要求：required 必须包含 properties 中的所有键
+            // 对于可选字段，我们使用 type: ["type", "null"] 来允许 null 值
+            required: ["freq", "interval", "byDay", "until", "count"],
+            additionalProperties: false
           },
           
           // 元数据（用于调试和验证）
@@ -141,10 +148,27 @@ const eventSchema = {
                 description: "推断出的字段列表，如 ['end', 'location', 'category']"
               }
             },
-            required: ["confidence", "sourceText", "inferredFields"]
+            required: ["confidence", "sourceText", "inferredFields"],
+            additionalProperties: false
           }
         },
-        required: ["id", "title", "start", "end", "allDay", "metadata"],
+        // OpenAI Structured Outputs 要求：required 必须包含 properties 中的所有键
+        // 对于可选字段，我们使用 type: ["type", "null"] 来允许 null 值
+        required: [
+          "id", 
+          "title", 
+          "start", 
+          "end", 
+          "allDay", 
+          "description",
+          "location",
+          "backgroundColor",
+          "borderColor",
+          "textColor",
+          "extendedProps",
+          "recurrence",
+          "metadata"
+        ],
         additionalProperties: false
       }
     }
