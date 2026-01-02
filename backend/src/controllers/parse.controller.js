@@ -11,6 +11,63 @@ const { logger } = require('../middlewares/logger');
 const axios = require('axios');
 
 /**
+ * 获取代理配置
+ * 从环境变量中读取代理设置，返回 axios proxy 配置对象
+ * 测试发现：axios 的 proxy 选项（对象格式）比 HttpsProxyAgent 更稳定
+ */
+function getProxyConfig() {
+  // 重新加载环境变量（确保获取最新的 .env 配置）
+  const path = require('path');
+  const envPath = path.resolve(__dirname, '../.env');
+  require('dotenv').config({ path: envPath, override: true });
+  
+  // 如果环境变量 ENABLE_PROXY 设置为 false，则跳过代理
+  if (process.env.ENABLE_PROXY === 'false') {
+    if (process.env.NODE_ENV === 'development') {
+      logger.info('代理已禁用（ENABLE_PROXY=false）');
+    }
+    return null;
+  }
+  
+  // 优先使用 HTTPS_PROXY，如果没有则使用 HTTP_PROXY
+  const proxyUrl = process.env.HTTPS_PROXY || process.env.HTTP_PROXY || process.env.https_proxy || process.env.http_proxy;
+  
+  if (proxyUrl) {
+    try {
+      // 解析代理 URL 为对象格式（这是最稳定的方式）
+      const url = new URL(proxyUrl);
+      const proxyConfig = {
+        host: url.hostname,
+        port: parseInt(url.port) || (url.protocol === 'https:' ? 443 : 80),
+        protocol: url.protocol.replace(':', ''),
+      };
+      
+      // 如果代理 URL 包含认证信息
+      if (url.username || url.password) {
+        proxyConfig.auth = {
+          username: url.username || '',
+          password: url.password || '',
+        };
+      }
+      
+      if (process.env.NODE_ENV === 'development') {
+        logger.info('使用代理服务器', { proxyUrl: proxyUrl.replace(/:[^:@]+@/, ':****@') }); // 隐藏密码
+      }
+      return proxyConfig;
+    } catch (error) {
+      logger.warn('代理配置错误，将跳过代理', { error: error.message, proxyUrl });
+      return null;
+    }
+  } else {
+    if (process.env.NODE_ENV === 'development') {
+      logger.info('未配置代理服务器，将直接连接');
+    }
+  }
+  
+  return null;
+}
+
+/**
  * 解析日程
  * POST /api/v1/events/parse
  */
@@ -36,165 +93,49 @@ async function parseSchedule(req, res, next) {
     let response;
     let useStructuredOutputs = true;
     
-    // 首先尝试使用 OpenAI SDK
-    const openai = getOpenAIClient();
+    // 优先使用 axios 直接调用（更稳定、更快）
+    // 跳过 SDK，因为自定义 fetch 实现可能导致超时问题
     
-    try {
-      response = await openai.chat.completions.create({
-        model: model,
-        messages: [
-          {
-            role: 'system',
-            content: systemPrompt,
-          },
-          {
-            role: 'user',
-            content: text,
-          },
-        ],
-        response_format: {
-          type: 'json_schema',
-          json_schema: {
-            name: 'calendar_events',
-            schema: eventSchema,
-            strict: true,
-          },
-        },
-        temperature: 0.3,
-        max_tokens: 4000,
-      });
-    } catch (sdkError) {
-      // 如果 SDK 失败，尝试使用 axios 直接调用
-      // 检查是否是认证错误、连接错误或其他可恢复的错误
-      const errorName = sdkError.constructor?.name || '';
-      const errorMessage = sdkError.message || '';
-      const errorCode = sdkError.code || '';
-      
-      const isRecoverableError = 
-        sdkError.status === 401 || // 认证错误
-        errorName === 'APIConnectionError' || // 连接错误
-        errorCode === 'APIConnectionError' ||
-        errorMessage.includes('Connection error') ||
-        errorMessage.includes('connection') ||
-        errorMessage.includes('fetch failed') ||
-        errorMessage.includes('ECONNREFUSED') ||
-        errorMessage.includes('ETIMEDOUT');
-      
-      if (isRecoverableError) {
-        const errorType = sdkError.status === 401 ? '401 认证错误' : 
-                         errorName === 'APIConnectionError' ? '连接错误' : 'SDK 错误';
-        logger.warn(`OpenAI SDK 返回 ${errorType}，尝试使用 axios 直接调用 API`, {
-          error: errorMessage,
-          errorType: errorName,
-          errorCode: errorCode,
-          status: sdkError.status,
-        });
-        
-        try {
-          // 使用 axios 直接调用 OpenAI API
-          const axiosResponse = await axios.post(
-            'https://api.openai.com/v1/chat/completions',
-            {
-              model: model,
-              messages: [
-                {
-                  role: 'system',
-                  content: systemPrompt,
-                },
-                {
-                  role: 'user',
-                  content: text,
-                },
-              ],
-              response_format: {
-                type: 'json_schema',
-                json_schema: {
-                  name: 'calendar_events',
-                  schema: eventSchema,
-                  strict: true,
-                },
-              },
-              temperature: 0.3,
-              max_tokens: 4000,
-            },
-            {
-              headers: {
-                'Authorization': `Bearer ${apiKey}`,
-                'Content-Type': 'application/json',
-              },
-            }
-          );
-          
-          // 将 axios 响应转换为 SDK 格式
-          response = { choices: axiosResponse.data.choices };
-          logger.info('使用 axios 成功调用 OpenAI API');
-        } catch (axiosError) {
-          // axios 也失败，检查是否是 Structured Outputs 不支持
-          if (axiosError.response && axiosError.response.status === 400 && 
-              axiosError.response.data && axiosError.response.data.error && 
-              axiosError.response.data.error.message && 
-              axiosError.response.data.error.message.includes('response_format')) {
-            
-            logger.warn('Structured Outputs not available, falling back to JSON mode', {
-              model: model,
-            });
-            
-            useStructuredOutputs = false;
-            
-            // 使用普通 JSON 模式
-            const jsonSystemPrompt = systemPrompt + '\n\n重要：你必须严格按照以下 JSON Schema 格式返回数据，不要添加任何额外的文本或说明：\n' + JSON.stringify(eventSchema, null, 2);
-            
-            const jsonResponse = await axios.post(
-              'https://api.openai.com/v1/chat/completions',
-              {
-                model: model,
-                messages: [
-                  {
-                    role: 'system',
-                    content: jsonSystemPrompt,
-                  },
-                  {
-                    role: 'user',
-                    content: text,
-                  },
-                ],
-                response_format: {
-                  type: 'json_object',
-                },
-                temperature: 0.3,
-                max_tokens: 4000,
-              },
-              {
-                headers: {
-                  'Authorization': `Bearer ${apiKey}`,
-                  'Content-Type': 'application/json',
-                },
-              }
-            );
-            
-            response = { choices: jsonResponse.data.choices };
-          } else {
-            // 其他错误，抛出原始错误
-            throw axiosError;
-          }
+    // 获取代理配置（可选）
+    const proxyConfig = getProxyConfig();
+    
+    // 重试机制：最多重试 3 次
+    let lastError = null;
+    let retryCount = 0;
+    const maxRetries = 3;
+    
+    while (retryCount < maxRetries) {
+      try {
+        if (retryCount > 0) {
+          logger.info(`重试 OpenAI API 调用 (第 ${retryCount} 次)`);
+          // 等待一段时间再重试（指数退避，增加等待时间）
+          await new Promise(resolve => setTimeout(resolve, 2000 * retryCount));
+        } else {
+          logger.info('使用 axios 直接调用 OpenAI API (Structured Outputs)');
         }
-      } else if (sdkError.message && sdkError.message.includes('response_format')) {
-        // Structured Outputs 不支持，降级到 JSON 模式
-        logger.warn('Structured Outputs not available, falling back to JSON mode', {
-          model: model,
-          error: sdkError.message,
-        });
         
-        useStructuredOutputs = false;
+        const axiosConfig = {
+          headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          timeout: proxyConfig ? 90000 : 30000, // 使用代理时增加超时时间到 90 秒
+          maxRedirects: 5,
+        };
         
-        const jsonSystemPrompt = systemPrompt + '\n\n重要：你必须严格按照以下 JSON Schema 格式返回数据，不要添加任何额外的文本或说明：\n' + JSON.stringify(eventSchema, null, 2);
+        // 如果配置了代理，使用 axios 的 proxy 选项（对象格式，最稳定）
+        if (proxyConfig) {
+          axiosConfig.proxy = proxyConfig;
+        }
         
-        response = await openai.chat.completions.create({
+        const axiosResponse = await axios.post(
+        'https://api.openai.com/v1/chat/completions',
+        {
           model: model,
           messages: [
             {
               role: 'system',
-              content: jsonSystemPrompt,
+              content: systemPrompt,
             },
             {
               role: 'user',
@@ -202,17 +143,54 @@ async function parseSchedule(req, res, next) {
             },
           ],
           response_format: {
-            type: 'json_object',
+            type: 'json_schema',
+            json_schema: {
+              name: 'calendar_events',
+              schema: eventSchema,
+              strict: true,
+            },
           },
           temperature: 0.3,
           max_tokens: 4000,
+        },
+          axiosConfig
+        );
+        
+        // 将 axios 响应转换为 SDK 格式
+        response = { choices: axiosResponse.data.choices };
+        logger.info('使用 axios 成功调用 OpenAI API (Structured Outputs)');
+        break; // 成功，退出重试循环
+      } catch (axiosError) {
+        lastError = axiosError;
+        retryCount++;
+        
+        // 检查是否是可重试的错误
+        const isRetryableError = 
+          axiosError.code === 'ECONNRESET' ||
+          axiosError.code === 'ETIMEDOUT' ||
+          axiosError.code === 'ECONNREFUSED' ||
+          axiosError.message?.includes('socket hang up') ||
+          axiosError.message?.includes('timeout');
+        
+        if (!isRetryableError || retryCount >= maxRetries) {
+          // 不可重试的错误或已达到最大重试次数，抛出错误
+          throw axiosError;
+        }
+        
+        // 可重试的错误，继续循环
+        logger.warn(`请求失败，将重试 (${retryCount}/${maxRetries})`, {
+          error: axiosError.message,
+          code: axiosError.code,
         });
-      } else {
-        // 其他错误，直接抛出
-        throw sdkError;
       }
     }
-
+    
+    // 如果所有重试都失败
+    if (!response) {
+      throw lastError || new Error('所有重试都失败了');
+    }
+    
+    // 如果成功，继续处理响应
     // 解析响应
     const content = response.choices[0].message.content;
     let result;
@@ -323,6 +301,16 @@ async function parseSchedule(req, res, next) {
       code: error.code,
       stack: process.env.NODE_ENV === 'development' ? error.stack : undefined,
     });
+
+    // 网络连接错误
+    if (error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT' || 
+        error.code === 'ENOTFOUND' || error.message?.includes('connect')) {
+      const errorResponse = createErrorResponse('AI_SERVICE_ERROR',
+        `网络连接错误: ${error.message || '无法连接到 OpenAI API'}`,
+        '请检查网络连接、防火墙设置，或配置代理服务器。如果在中国大陆，可能需要使用代理访问 OpenAI API。'
+      );
+      return res.status(errorResponse.httpStatus).json(errorResponse);
+    }
 
     // OpenAI API 错误
     if (error.status) {

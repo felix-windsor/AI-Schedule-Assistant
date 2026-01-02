@@ -72,7 +72,9 @@ function createAxiosFetch() {
         url: url,
         method: options.method || 'GET',
         headers: headers,
-        timeout: options.timeout || 60000,
+        // 使用更长的超时时间（120秒），与 OpenAI 客户端配置保持一致
+        // 如果 options.timeout 存在，使用它；否则使用 120000（120秒）
+        timeout: options.timeout || 120000,
         validateStatus: () => true, // 不抛出错误，让 SDK 处理状态码
         // 添加重试配置，提高网络稳定性
         maxRedirects: 5,
@@ -210,8 +212,8 @@ function getOpenAIClient() {
     apiKey: apiKey,
     // 明确指定 baseURL，防止 SDK 自动检测到错误的 API 端点
     baseURL: 'https://api.openai.com/v1',
-    // 增加超时时间（60秒）
-    timeout: 60000,
+    // 增加超时时间（120秒，Structured Outputs 可能需要更长时间）
+    timeout: 120000,
     // 最大重试次数
     maxRetries: 2,
     // 使用基于 axios 的 fetch 实现，解决连接问题
