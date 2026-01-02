@@ -1,8 +1,8 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useRef } from "react"
 import { motion, AnimatePresence } from "framer-motion"
-import { MagicBar } from "@/components/input/magic-bar"
+import { MagicBar, type MagicBarRef } from "@/components/input/magic-bar"
 import { Calendar } from "@/components/calendar/calendar"
 import { EventDrawer } from "@/components/calendar/event-drawer"
 import { TestScenarios } from "@/components/input/test-scenarios"
@@ -15,9 +15,11 @@ export default function Page() {
   const [statusMessage, setStatusMessage] = useState<{
     type: StatusMessageType
     message: string
+    suggestion?: string
     metadata?: { total_events?: number; confidence_score?: number }
   } | null>(null)
   const [newEventAnimation, setNewEventAnimation] = useState<CalendarEvent | null>(null)
+  const magicBarRef = useRef<MagicBarRef>(null)
 
   const handleEventsAdded = (
     newEvents: CalendarEvent[],
@@ -40,8 +42,16 @@ export default function Page() {
   const handleError = (error: string, suggestion?: string) => {
     setStatusMessage({
       type: "error",
-      message: error + (suggestion ? `\n${suggestion}` : ""),
+      message: error,
+      suggestion: suggestion,
     })
+    // 错误消息不自动消失，需要用户手动关闭
+  }
+
+  const handleScenarioSelect = (text: string) => {
+    if (magicBarRef.current) {
+      magicBarRef.current.setText(text)
+    }
   }
 
   const handleClearCalendar = () => {
@@ -54,7 +64,7 @@ export default function Page() {
   }
 
   const handleDeleteEvent = (eventId: string) => {
-    setEvents(events.filter((e) => e.id !== eventId))
+    setEvents(events.filter((e: CalendarEvent) => e.id !== eventId))
     setSelectedEvent(null)
     setStatusMessage({
       type: "success",
@@ -73,7 +83,12 @@ export default function Page() {
 
       <main className="container mx-auto px-4 py-6 max-w-7xl">
         <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
-          <MagicBar onEventsAdded={handleEventsAdded} onError={handleError} onClearCalendar={handleClearCalendar} />
+          <MagicBar
+            ref={magicBarRef}
+            onEventsAdded={handleEventsAdded}
+            onError={handleError}
+            onClearCalendar={handleClearCalendar}
+          />
         </motion.div>
 
         <AnimatePresence>
@@ -88,14 +103,29 @@ export default function Page() {
                 className={`glass-strong rounded-lg p-4 border ${
                   statusMessage.type === "success"
                     ? "border-green-500/30 text-green-400"
-                    : "border-red-500/30 text-red-400"
+                    : statusMessage.type === "warning"
+                      ? "border-yellow-500/30 text-yellow-400"
+                      : "border-red-500/30 text-red-400"
                 }`}
               >
-                <div className="flex items-center justify-between">
-                  <span className="text-sm">{statusMessage.message}</span>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1 space-y-1">
+                    <div className="text-sm whitespace-pre-line">{statusMessage.message}</div>
+                    {statusMessage.suggestion && (
+                      <div className="text-xs opacity-80 mt-2 pt-2 border-t border-current/20">
+                        💡 {statusMessage.suggestion}
+                      </div>
+                    )}
+                    {statusMessage.metadata && statusMessage.type === "success" && (
+                      <div className="text-xs opacity-70 mt-2">
+                        置信度: {Math.round((statusMessage.metadata.confidence_score || 0) * 100)}%
+                      </div>
+                    )}
+                  </div>
                   <button
                     onClick={() => setStatusMessage(null)}
-                    className="text-muted-foreground hover:text-foreground transition-colors"
+                    className="text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
+                    aria-label="关闭消息"
                   >
                     ×
                   </button>
@@ -113,7 +143,7 @@ export default function Page() {
             transition={{ duration: 0.5, delay: 0.2 }}
             className="lg:col-span-3"
           >
-            <TestScenarios />
+            <TestScenarios onScenarioSelect={handleScenarioSelect} />
           </motion.div>
 
           {/* Calendar Main Area */}

@@ -12,13 +12,14 @@ const scenarios = [
   { label: "复杂场景", text: "明天下午3点开会1小时，晚上7点健身，9点和朋友吃饭", icon: "⚡" },
 ]
 
-export function TestScenarios() {
+interface TestScenariosProps {
+  onScenarioSelect?: (text: string) => void
+}
+
+export function TestScenarios({ onScenarioSelect }: TestScenariosProps) {
   const handleScenarioClick = (text: string) => {
-    const textarea = document.querySelector("textarea") as HTMLTextAreaElement
-    if (textarea) {
-      textarea.value = text
-      textarea.dispatchEvent(new Event("input", { bubbles: true }))
-      textarea.focus()
+    if (onScenarioSelect) {
+      onScenarioSelect(text)
     }
   }
 

@@ -87,16 +87,33 @@ export function Calendar({ events, onEventClick }: CalendarProps) {
           height="auto"
           editable={true}
           selectable={true}
-          events={events.map((event) => ({
-            id: event.id,
-            title: event.title,
-            start: event.start,
-            end: event.end,
-            allDay: event.allDay,
-            backgroundColor: event.backgroundColor || getCategoryColor(event.extendedProps.category),
-            borderColor: event.borderColor || getCategoryColor(event.extendedProps.category),
-            textColor: event.textColor || "#ffffff",
-          }))}
+          events={events.map((event) => {
+            // 确保时间格式正确（FullCalendar 需要 ISO 8601 格式）
+            const start = event.start
+            const end = event.end
+
+            // 构建 FullCalendar 事件对象
+            return {
+              id: event.id,
+              title: event.title,
+              start: start, // ISO 8601 格式，包含时区
+              end: end, // ISO 8601 格式，包含时区
+              allDay: event.allDay || false,
+              backgroundColor: event.backgroundColor || getCategoryColor(event.extendedProps?.category),
+              borderColor: event.borderColor || event.backgroundColor || getCategoryColor(event.extendedProps?.category),
+              textColor: event.textColor || "#ffffff",
+              // FullCalendar 会自动处理 extendedProps
+              extendedProps: {
+                description: event.description || event.extendedProps?.description,
+                location: event.location || event.extendedProps?.location,
+                category: event.extendedProps?.category,
+                timezone: event.extendedProps?.timezone,
+                priority: event.extendedProps?.priority,
+                // 保留原始 metadata 用于显示
+                metadata: event.metadata,
+              },
+            }
+          })}
           eventClick={handleEventClick}
           buttonText={{
             today: "今天",
