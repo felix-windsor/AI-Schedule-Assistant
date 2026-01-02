@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI 日程助手 - 测试页面</title>
+  <script src='https://cdn.jsdelivr.net/npm/fullcalendar@6.1.10/index.global.min.js'></script>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>AI 日程助手 - 测试页面</h1>
+      <p class="subtitle">输入自然语言，AI 自动解析并生成日程</p>
+    </header>
+
+    <div class="input-section">
+      <div class="input-group">
+        <label for="schedule-input">日程描述：</label>
+        <textarea 
+          id="schedule-input" 
+          placeholder="例如：明天下午3点和老板开会1小时，晚上7点健身"
+          rows="3"
+        ></textarea>
+      </div>
+
+      <div class="button-group">
+        <button id="parse-btn" class="btn btn-primary">解析并添加到日历</button>
+        <button id="clear-btn" class="btn btn-secondary">清空日历</button>
+        <button id="test-btn" class="btn btn-test">加载测试数据</button>
+      </div>
+
+      <div id="status-message" class="status-message"></div>
+    </div>
+
+    <div class="calendar-section">
+      <div id="calendar"></div>
+    </div>
+
+    <div class="info-section">
+      <h3>测试场景</h3>
+      <div class="test-scenarios">
+        <button class="scenario-btn" data-text="明天下午3点和老板开会">简单事件</button>
+        <button class="scenario-btn" data-text="后天上午10点项目评审，下午2点客户会议">多个事件</button>
+        <button class="scenario-btn" data-text="下周一全天团建">全天事件</button>
+        <button class="scenario-btn" data-text="每周三早上9点站会15分钟">重复事件</button>
+        <button class="scenario-btn" data-text="明天下午3点开会1小时，晚上7点健身，9点和朋友吃饭">复杂场景</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // API 配置
+    const API_BASE_URL = 'http://localhost:5000';
+    const API_ENDPOINT = `${API_BASE_URL}/api/v1/events/parse`;
+
+    // 初始化日历
+    let calendar;
+    document.addEventListener('DOMContentLoaded', function() {
+      const calendarEl = document.getElementById('calendar');
+      
+      calendar = new FullCalendar.Calendar(calendarEl, {
+        initialView: 'timeGridWeek',
+        headerToolbar: {
+          left: 'prev,next today',
+          center: 'title',
+          right: 'dayGridMonth,timeGridWeek,timeGridDay'
+        },
+        timeZone: 'Asia/Shanghai',
+        locale: 'zh-cn',
+        firstDay: 1, // 周一开始
+        slotMinTime: '08:00:00',
+        slotMaxTime: '22:00:00',
+        height: 'auto',
+        editable: true,
+        selectable: true,
+        events: [],
+        eventClick: function(info) {
+          const event = info.event;
+          const message = `事件: ${event.title}\n` +
+                         `时间: ${event.start.toLocaleString('zh-CN')} - ${event.end.toLocaleString('zh-CN')}\n` +
+                         `是否删除?`;
+          
+          if (confirm(message)) {
+            event.remove();
+            showStatus('事件已删除', 'success');
+          }
+        },
+      });
+
+      calendar.render();
+    });
+
+    // 显示状态消息
+    function showStatus(message, type = 'info') {
+      const statusEl = document.getElementById('status-message');
+      statusEl.textContent = message;
+      statusEl.className = `status-message ${type}`;
+      
+      setTimeout(() => {
+        statusEl.textContent = '';
+        statusEl.className = 'status-message';
+      }, 5000);
+    }
+
+    // 获取当前时间和时区
+    function getContext() {
+      const now = new Date();
+      const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      
+      return {
+        current_time: now.toISOString(),
+        timezone: timezone,
+        locale: 'zh-CN'
+      };
+    }
+
+    // 解析日程
+    async function parseSchedule() {
+      const inputEl = document.getElementById('schedule-input');
+      const text = inputEl.value.trim();
+
+      if (!text) {
+        showStatus('请输入日程描述', 'error');
+        return;
+      }
+
+      const parseBtn = document.getElementById('parse-btn');
+      parseBtn.disabled = true;
+      parseBtn.textContent = '解析中...';
+
+      try {
+        showStatus('正在解析...', 'info');
+
+        const response = await fetch(API_ENDPOINT, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            text: text,
+            context: getContext(),
+            options: {
+              default_duration: 60,
+              allow_past_events: false,
+              max_events: 10
+            }
+          })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error?.message || '请求失败');
+        }
+
+        if (data.success && data.events && data.events.length > 0) {
+          // 添加事件到日历
+          data.events.forEach(event => {
+            // 转换 FullCalendar 格式
+            const calendarEvent = {
+              id: event.id,
+              title: event.title,
+              start: event.start,
+              end: event.end,
+              allDay: event.allDay || false,
+              backgroundColor: event.backgroundColor || getCategoryColor(event.extendedProps?.category),
+              borderColor: event.borderColor || event.backgroundColor || getCategoryColor(event.extendedProps?.category),
+              extendedProps: {
+                description: event.description || event.extendedProps?.description,
+                location: event.location || event.extendedProps?.location,
+                category: event.extendedProps?.category,
+                timezone: event.extendedProps?.timezone,
+              }
+            };
+
+            calendar.addEvent(calendarEvent);
+          });
+
+          showStatus(`成功添加 ${data.events.length} 个日程`, 'success');
+          inputEl.value = '';
+        } else {
+          showStatus('未解析出任何事件', 'warning');
+        }
+
+      } catch (error) {
+        console.error('Parse error:', error);
+        showStatus(`解析失败: ${error.message}`, 'error');
+      } finally {
+        parseBtn.disabled = false;
+        parseBtn.textContent = '解析并添加到日历';
+      }
+    }
+
+    // 根据分类获取颜色
+    function getCategoryColor(category) {
+      const colors = {
+        work: '#3788d8',
+        personal: '#28a745',
+        health: '#ffc107',
+        other: '#6c757d'
+      };
+      return colors[category] || colors.other;
+    }
+
+    // 清空日历
+    function clearCalendar() {
+      calendar.removeAllEvents();
+      showStatus('日历已清空', 'success');
+    }
+
+    // 加载测试数据
+    function loadTestData() {
+      const testEvents = [
+        {
+          id: 'test_1',
+          title: '测试会议',
+          start: new Date().toISOString().split('T')[0] + 'T15:00:00+08:00',
+          end: new Date().toISOString().split('T')[0] + 'T16:00:00+08:00',
+          allDay: false,
+          backgroundColor: '#3788d8',
+        },
+        {
+          id: 'test_2',
+          title: '测试健身',
+          start: new Date().toISOString().split('T')[0] + 'T19:00:00+08:00',
+          end: new Date().toISOString().split('T')[0] + 'T20:00:00+08:00',
+          allDay: false,
+          backgroundColor: '#ffc107',
+        }
+      ];
+
+      calendar.removeAllEvents();
+      testEvents.forEach(event => calendar.addEvent(event));
+      showStatus('测试数据已加载', 'success');
+    }
+
+    // 事件监听
+    document.getElementById('parse-btn').addEventListener('click', parseSchedule);
+    document.getElementById('clear-btn').addEventListener('click', clearCalendar);
+    document.getElementById('test-btn').addEventListener('click', loadTestData);
+
+    // 测试场景按钮
+    document.querySelectorAll('.scenario-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const text = btn.getAttribute('data-text');
+        document.getElementById('schedule-input').value = text;
+      });
+    });
+
+    // 回车键提交
+    document.getElementById('schedule-input').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && e.ctrlKey) {
+        parseSchedule();
+      }
+    });
+  </script>
+</body>
+</html>
+
