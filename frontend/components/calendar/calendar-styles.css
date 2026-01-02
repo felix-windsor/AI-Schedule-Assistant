@@ -1,0 +1,136 @@
+.calendar-container {
+  min-height: 600px;
+}
+
+/* Custom dark theme styling for FullCalendar */
+.fc {
+  --fc-border-color: rgba(255, 255, 255, 0.1);
+  --fc-button-bg-color: #e30613;
+  --fc-button-border-color: #e30613;
+  --fc-button-hover-bg-color: rgba(227, 6, 19, 0.8);
+  --fc-button-hover-border-color: rgba(227, 6, 19, 0.8);
+  --fc-button-active-bg-color: rgba(227, 6, 19, 0.6);
+  --fc-button-active-border-color: rgba(227, 6, 19, 0.6);
+  --fc-today-bg-color: rgba(227, 6, 19, 0.05);
+  --fc-neutral-bg-color: transparent;
+}
+
+.fc .fc-button {
+  text-transform: capitalize;
+  font-size: 0.875rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.5rem;
+  font-weight: 500;
+}
+
+.fc .fc-button-primary:not(:disabled) {
+  background-color: var(--fc-button-bg-color);
+  border-color: var(--fc-button-border-color);
+  box-shadow: 0 0 20px rgba(227, 6, 19, 0.3);
+}
+
+.fc .fc-button-primary:hover:not(:disabled) {
+  background-color: var(--fc-button-hover-bg-color);
+  border-color: var(--fc-button-hover-border-color);
+  box-shadow: 0 0 30px rgba(227, 6, 19, 0.4);
+}
+
+.fc .fc-button-primary:active:not(:disabled) {
+  background-color: var(--fc-button-active-bg-color);
+  border-color: var(--fc-button-active-border-color);
+}
+
+.fc .fc-toolbar-title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #ededed;
+}
+
+/* Enhanced header styling with bright white text, larger font size, subtle background and stronger border */
+.fc .fc-col-header-cell {
+  background-color: rgba(26, 26, 26, 0.8);
+  font-weight: 600;
+  color: #f8fafc;
+  font-size: 0.875rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+  padding: 0.75rem 0.5rem;
+}
+
+/* Highlight current date in week view with red text */
+.fc-timeGridWeek-view .fc-col-header-cell.fc-day-today .fc-col-header-cell-cushion {
+  color: #e30613;
+  font-weight: 700;
+}
+
+/* Highlight current date in month view */
+.fc-dayGridMonth-view .fc-col-header-cell.fc-day-today .fc-col-header-cell-cushion {
+  color: #e30613;
+  font-weight: 700;
+}
+
+/* Highlight current date in day view */
+.fc-timeGridDay-view .fc-col-header-cell.fc-day-today .fc-col-header-cell-cushion {
+  color: #e30613;
+  font-weight: 700;
+}
+
+.fc .fc-daygrid-day.fc-day-today,
+.fc .fc-timegrid-col.fc-day-today {
+  background-color: var(--fc-today-bg-color) !important;
+}
+
+.fc .fc-timegrid-slot {
+  height: 3rem;
+  border-color: rgba(255, 255, 255, 0.05);
+}
+
+/* Custom event styling with rounded corners and glow */
+.fc .fc-event {
+  cursor: pointer;
+  border-radius: 0.5rem;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.875rem;
+  border: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  transition: all 0.2s ease;
+}
+
+.fc .fc-event:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(227, 6, 19, 0.4);
+}
+
+.fc .fc-event-title {
+  font-weight: 500;
+}
+
+/* Hover state on calendar slots */
+.fc .fc-timegrid-slot:hover {
+  background-color: rgba(255, 255, 255, 0.02);
+}
+
+.fc .fc-daygrid-day:hover {
+  background-color: rgba(255, 255, 255, 0.02);
+}
+
+/* Remove default borders */
+.fc-theme-standard td,
+.fc-theme-standard th {
+  border-color: rgba(255, 255, 255, 0.05);
+}
+
+.fc-theme-standard .fc-scrollgrid {
+  border-color: rgba(255, 255, 255, 0.05);
+}
+
+@media (max-width: 768px) {
+  .fc .fc-toolbar {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .fc .fc-toolbar-chunk {
+    display: flex;
+    justify-content: center;
+  }
+}
