@@ -24,6 +24,32 @@
 - **axios** - HTTP 客户端（支持代理）
 - **FullCalendar 兼容格式** - 标准化的日历事件数据结构
 
+### 数据流
+
+```mermaid
+sequenceDiagram
+    participant Client as 测试页面
+    participant API as Express API
+    participant Validator as 验证中间件
+    participant Controller as 解析控制器
+    participant OpenAI as OpenAI API
+    participant Calendar as FullCalendar
+
+    Client->>API: POST /api/v1/events/parse<br/>{text, context}
+    API->>Validator: 验证参数
+    alt 验证失败
+        Validator-->>Client: 400 错误响应
+    else 验证通过
+        Validator->>Controller: 转发请求
+        Controller->>OpenAI: 调用 Structured Outputs
+        OpenAI-->>Controller: 返回结构化事件数据
+        Controller->>Controller: 验证和转换数据
+        Controller-->>API: 成功响应
+        API-->>Client: 返回 events 数组
+        Client->>Calendar: 渲染事件到日历
+    end
+```
+
 ### 前端
 - **Next.js 16** - React 框架
 - **React 19** - UI 库

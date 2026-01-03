@@ -5,8 +5,10 @@ import FullCalendar from "@fullcalendar/react"
 import dayGridPlugin from "@fullcalendar/daygrid"
 import timeGridPlugin from "@fullcalendar/timegrid"
 import interactionPlugin from "@fullcalendar/interaction"
+import rrulePlugin from "@fullcalendar/rrule"
 import { motion } from "framer-motion"
 import { getCategoryColor } from "@/lib/utils/colors"
+import { convertRecurrenceToRRule } from "@/lib/utils/recurrence"
 import type { CalendarEvent } from "@/lib/api/types"
 import "./calendar-styles.css"
 
@@ -72,7 +74,7 @@ export function Calendar({ events, onEventClick }: CalendarProps) {
       <div className="p-4 calendar-container">
         <FullCalendar
           ref={calendarRef}
-          plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
+          plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin, rrulePlugin]}
           initialView="timeGridWeek"
           headerToolbar={{
             left: "prev,next today",
@@ -92,6 +94,9 @@ export function Calendar({ events, onEventClick }: CalendarProps) {
             const start = event.start
             const end = event.end
 
+            // 转换 recurrence 为 RRULE 字符串
+            const rrule = convertRecurrenceToRRule(event)
+
             // 构建 FullCalendar 事件对象
             return {
               id: event.id,
@@ -102,6 +107,8 @@ export function Calendar({ events, onEventClick }: CalendarProps) {
               backgroundColor: event.backgroundColor || getCategoryColor(event.extendedProps?.category),
               borderColor: event.borderColor || event.backgroundColor || getCategoryColor(event.extendedProps?.category),
               textColor: event.textColor || "#ffffff",
+              // 添加 rrule 字段用于重复事件
+              rrule: rrule || undefined,
               // FullCalendar 会自动处理 extendedProps
               extendedProps: {
                 description: event.description || event.extendedProps?.description,
