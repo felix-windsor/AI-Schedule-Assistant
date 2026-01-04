@@ -25,30 +25,67 @@
 - **FullCalendar 兼容格式** - 标准化的日历事件数据结构
 
 ### 数据流
-
-```mermaid
+aid
 sequenceDiagram
-    participant Client as 测试页面
-    participant API as Express API
+    participant User as 用户
+    participant MagicBar as MagicBar 组件
+    participant API as API 客户端<br/>(schedule.ts)
+    participant Express as Express 服务器
+    participant CORS as CORS 中间件
+    participant Logger as 日志中间件
     participant Validator as 验证中间件
     participant Controller as 解析控制器
+    participant Proxy as 代理服务器<br/>(可选)
     participant OpenAI as OpenAI API
     participant Calendar as FullCalendar
 
-    Client->>API: POST /api/v1/events/parse<br/>{text, context}
-    API->>Validator: 验证参数
+    User->>MagicBar: 输入自然语言<br/>"明天下午3点开会"
+    MagicBar->>MagicBar: 验证输入<br/>(长度、非空)
+    MagicBar->>API: parseSchedule({text, context, options})
+    API->>Express: POST /api/v1/events/parse<br/>{text, context, options}
+    
+    Express->>CORS: 处理跨域请求
+    CORS->>Logger: 记录请求日志
+    Logger->>Validator: 验证参数<br/>(text, context, options)
+    
     alt 验证失败
-        Validator-->>Client: 400 错误响应
+        Validator-->>API: 400 错误响应<br/>{error: {code, message, suggestion}}
+        API-->>MagicBar: ScheduleParseError
+        MagicBar-->>User: 显示错误提示
     else 验证通过
         Validator->>Controller: 转发请求
-        Controller->>OpenAI: 调用 Structured Outputs
-        OpenAI-->>Controller: 返回结构化事件数据
-        Controller->>Controller: 验证和转换数据
-        Controller-->>API: 成功响应
-        API-->>Client: 返回 events 数组
-        Client->>Calendar: 渲染事件到日历
+        Controller->>Controller: 构建 System Prompt<br/>(基于 context 和 options)
+        Controller->>Controller: 获取代理配置<br/>(如果 ENABLE_PROXY=true)
+        
+        loop 重试机制 (最多3次)
+            Controller->>Proxy: 通过代理发送请求<br/>(如果配置了代理)
+            Proxy->>OpenAI: POST /v1/chat/completions<br/>(Structured Outputs)
+            OpenAI-->>Proxy: 返回结构化事件数据
+            Proxy-->>Controller: 响应数据
+        end
+        
+        alt 网络错误 (ECONNRESET/ETIMEDOUT)
+            Controller->>Controller: 指数退避重试
+            Controller-->>API: 网络错误响应
+            API-->>MagicBar: ScheduleParseError<br/>(网络连接错误)
+            MagicBar-->>User: 显示错误提示<br/>"请检查网络连接或配置代理"
+        else OpenAI API 错误
+            Controller-->>API: API 错误响应<br/>(400/401/429/500/503)
+            API-->>MagicBar: ScheduleParseError<br/>(带错误码和建议)
+            MagicBar-->>User: 显示错误提示
+        else 解析成功
+            Controller->>Controller: 解析 JSON 响应
+            Controller->>Controller: 验证事件数据<br/>(字段完整性、时间格式、逻辑)
+            Controller->>Controller: 应用限制<br/>(max_events, allow_past_events)
+            Controller-->>Express: 成功响应<br/>{success: true, events, metadata}
+            Express-->>API: JSON 响应
+            API-->>MagicBar: ParseResponse<br/>{events, metadata}
+            MagicBar->>MagicBar: 清空输入框
+            MagicBar->>Calendar: 添加事件到日历<br/>(events 数组)
+            Calendar-->>User: 渲染事件到日历视图
+            MagicBar-->>User: 显示成功提示<br/>"成功添加 X 个日程"
+        end
     end
-```
 
 ### 前端
 - **Next.js 16** - React 框架
