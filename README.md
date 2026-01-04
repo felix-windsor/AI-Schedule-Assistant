@@ -25,6 +25,8 @@
 - **FullCalendar 兼容格式** - 标准化的日历事件数据结构
 
 ### 数据流
+
+```mermaid
 aid
 sequenceDiagram
     participant User as 用户
@@ -86,6 +88,7 @@ sequenceDiagram
             MagicBar-->>User: 显示成功提示<br/>"成功添加 X 个日程"
         end
     end
+```
 
 ### 前端
 - **Next.js 16** - React 框架
